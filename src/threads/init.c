@@ -65,6 +65,28 @@ static char **parse_options (char **argv);
 static void run_actions (char **argv);
 static void usage (void);
 
+static void read_line (char line[], size_t size) {
+  char* pos = line;
+  for (;;) {
+    char c;
+    c = input_getc();
+    switch (c) {
+      case '\r':
+        *pos = '\0';
+        putchar(c);
+        return;
+      case '\b':
+        break;
+      default:
+        if (pos < line + size - 1) {
+          putchar(c);
+          *pos++ = c;
+        }
+        break;
+    }
+  }
+}
+
 #ifdef FILESYS
 static void locate_block_devices (void);
 static void locate_block_device (enum block_type, const char *name);
@@ -134,6 +156,21 @@ pintos_init (void)
     run_actions (argv);
   } else {
     // TODO: no command line passed to kernel. Run interactively 
+    printf("Shell starting...\n");
+    for (;;) {
+      char command[80];
+      printf("PKUOS > ");
+      read_line(command, sizeof(command));
+
+      if (!strcmp(command, "exit")) {
+        break;
+      } else if (!strcmp(command, "whoami")) {
+        printf("\nmy student id is 76\n");
+      } else {
+        printf("\nPlease input correct command\n");
+      }
+    }
+
   }
 
   /* Finish up. */
@@ -170,7 +207,7 @@ paging_init (void)
   for (page = 0; page < init_ram_pages; page++)
     {
       uintptr_t paddr = page * PGSIZE;
-      char *vaddr = ptov (paddr);
+      char *vaddr = ptov (paddr); // 将 pagetbl 中从 LOADER_PHYS_BASE 开始映射到 64M 物理内存 （当前的 pagetbl 有两处都映射了 64M 物理内存）
       size_t pde_idx = pd_no (vaddr);
       size_t pte_idx = pt_no (vaddr);
       bool in_kernel_text = &_start <= vaddr && vaddr < &_end_kernel_text;
@@ -178,7 +215,7 @@ paging_init (void)
       if (pd[pde_idx] == 0)
         {
           pt = palloc_get_page (PAL_ASSERT | PAL_ZERO);
-          pd[pde_idx] = pde_create (pt);
+          pd[pde_idx] = pde_create (pt); // page directory 存的是 physical addr
         }
 
       pt[pte_idx] = pte_create_kernel (vaddr, !in_kernel_text);
@@ -189,7 +226,7 @@ paging_init (void)
      new page tables immediately.  See [IA32-v2a] "MOV--Move
      to/from Control Registers" and [IA32-v3a] 3.7.5 "Base Address
      of the Page Directory". */
-  asm volatile ("movl %0, %%cr3" : : "r" (vtop (init_page_dir)));
+  asm volatile ("movl %0, %%cr3" : : "r" (vtop (init_page_dir))); // cr3 里直接存的是物理地址
 }
 
 /** Breaks the kernel command line into words and returns them as
