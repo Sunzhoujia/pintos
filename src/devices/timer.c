@@ -20,6 +20,17 @@
 /** Number of timer ticks since OS booted. */
 static int64_t ticks;
 
+/** List of processes in THREAD_BLOCKED state. When time expired, they will be waked. */
+static struct list sleeping_list;
+
+/** Decide when to wake up the blocked thread. */
+struct sleeping_elem 
+  {
+    int64_t end_tick;
+    struct list_elem elem;              /**< List element. */
+    struct semaphore semaphore;         /**< This semaphore. */
+  };
+
 /** Number of loops per timer tick.
    Initialized by timer_calibrate(). */
 static unsigned loops_per_tick;
@@ -35,6 +46,8 @@ static void real_time_delay (int64_t num, int32_t denom);
 void
 timer_init (void) 
 {
+  list_init (&sleeping_list);
+
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
 }
@@ -89,11 +102,38 @@ timer_elapsed (int64_t then)
 void
 timer_sleep (int64_t ticks) 
 {
+  ASSERT (intr_get_level () == INTR_ON);
+  if (ticks <= 0) {
+    thread_yield ();
+  }
+
   int64_t start = timer_ticks ();
 
-  ASSERT (intr_get_level () == INTR_ON);
-  while (timer_elapsed (start) < ticks) 
-    thread_yield ();
+  struct sleeping_elem waiter;
+  waiter.end_tick = start + ticks;
+
+  /* Because interrupt handler will modify sleeping_list, so need to sync */
+  enum intr_level old_level;
+  old_level = intr_disable ();
+
+  struct list_elem* e;
+  /* Keep sleeping_list asending */
+  for (e = list_begin(&sleeping_list); e != list_end(&sleeping_list); e = list_next(e)) {
+    struct sleeping_elem *se = list_entry(e, struct sleeping_elem, elem);
+    if (se->end_tick > waiter.end_tick) {
+      list_insert(e, &waiter.elem);
+      break;
+    }
+  }
+  /* if e == list->tail, insert e before tail */
+  if (list_end(&sleeping_list) == e) {
+    list_insert(e, &waiter.elem);
+  }
+  intr_set_level (old_level);
+
+  sema_init(&waiter.semaphore, 0);
+  sema_down(&waiter.semaphore);
+
 }
 
 /** Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -172,6 +212,18 @@ timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
   thread_tick ();
+
+  struct list_elem *e;
+  for (e = list_begin(&sleeping_list); e != list_end(&sleeping_list); ) {
+    struct sleeping_elem *se = list_entry(e, struct sleeping_elem, elem);
+    if (se->end_tick <= timer_ticks()) {
+      sema_up(&se->semaphore);
+      e = list_remove(e);
+    } else {
+      break;
+    }
+  }
+
 }
 
 /** Returns true if LOOPS iterations waits for more than one timer
