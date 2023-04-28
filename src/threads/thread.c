@@ -4,6 +4,7 @@
 #include <random.h>
 #include <stdio.h>
 #include <string.h>
+#include "list.h"
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
@@ -238,7 +239,19 @@ thread_unblock (struct thread *t)
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
   list_push_back (&ready_list, &t->elem);
+  list_sort(&ready_list, compare_priority_func, NULL);
+
   t->status = THREAD_READY;
+
+  /** Priority check, if this new thread's priority greater than current thread,
+      call thread_yield(). But if in interrupt context, we can't use thread_yield() */
+  if (thread_current() != idle_thread && t->priority > thread_current()->priority) {
+    if (intr_context())
+      intr_yield_on_return();
+    else
+      thread_yield();
+  }
+
   intr_set_level (old_level);
 }
 
@@ -307,12 +320,31 @@ thread_yield (void)
   ASSERT (!intr_context ());
 
   old_level = intr_disable ();
-  if (cur != idle_thread) 
+  if (cur != idle_thread) {
     list_push_back (&ready_list, &cur->elem);
+    list_sort(&ready_list, compare_priority_func, NULL);
+  }
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
 }
+
+/** Compares the value of two list elements A and B,
+   Returns true if A's prio is greater than B's, or
+   false if A's prio is less than or equal to B's. (sort prio by descending)*/
+bool compare_priority_func (const struct list_elem *a,
+                             const struct list_elem *b,
+                             void *aux UNUSED){
+  struct thread* A = list_entry(a, struct thread, elem);
+  struct thread* B = list_entry(b, struct thread, elem);
+
+  if (A->priority > B->priority) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
 
 /** Invoke function 'func' on all threads, passing along 'aux'.
    This function must be called with interrupts off. */
@@ -334,8 +366,21 @@ thread_foreach (thread_action_func *func, void *aux)
 /** Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) 
-{
+{  
+  enum intr_level old_level;
+  struct thread* t;
+
   thread_current ()->priority = new_priority;
+
+  /* Must set intr_disable() if access ready_list */
+  old_level = intr_disable ();
+  if (!list_empty(&ready_list)) {
+    t = list_entry(list_begin(&ready_list), struct thread, elem);
+    if (t->priority > new_priority) {
+      thread_yield();
+    }
+  }
+  intr_set_level(old_level);
 }
 
 /** Returns the current thread's priority. */

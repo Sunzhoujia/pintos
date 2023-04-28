@@ -128,6 +128,11 @@ void thread_yield (void);
 
 /** Performs some operation on thread t, given auxiliary data AUX. */
 typedef void thread_action_func (struct thread *t, void *aux);
+
+bool compare_priority_func (const struct list_elem *a,
+                             const struct list_elem *b,
+                             void *aux UNUSED);
+
 void thread_foreach (thread_action_func *, void *);
 
 int thread_get_priority (void);
