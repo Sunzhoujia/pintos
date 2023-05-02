@@ -214,16 +214,17 @@ timer_interrupt (struct intr_frame *args UNUSED)
   thread_tick ();
 
   struct list_elem *e;
-  for (e = list_begin(&sleeping_list); e != list_end(&sleeping_list); ) {
-    struct sleeping_elem *se = list_entry(e, struct sleeping_elem, elem);
-    if (se->end_tick <= timer_ticks()) {
-      sema_up(&se->semaphore);
-      e = list_remove(e);
-    } else {
-      break;
+  if (!list_empty(&sleeping_list)){
+    for (e = list_begin(&sleeping_list); e != list_end(&sleeping_list); ) {
+      struct sleeping_elem *se = list_entry(e, struct sleeping_elem, elem);
+      if (se->end_tick <= timer_ticks()) {
+        sema_up(&se->semaphore);
+        e = list_remove(e);
+      } else {
+        break;
+      }
     }
   }
-
 }
 
 /** Returns true if LOOPS iterations waits for more than one timer
