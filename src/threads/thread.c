@@ -233,6 +233,8 @@ void
 thread_unblock (struct thread *t) 
 {
   enum intr_level old_level;
+  struct thread* tmp;
+  struct list_elem* e;
 
   ASSERT (is_thread (t));
 
@@ -240,16 +242,27 @@ thread_unblock (struct thread *t)
   ASSERT (t->status == THREAD_BLOCKED);
   list_push_back (&ready_list, &t->elem);
   list_sort(&ready_list, compare_priority_func, NULL);
+  // for (e = list_begin(&ready_list); e != list_end(&ready_list); e = list_next(e)) {
+  //   tmp = list_entry(e, struct thread, elem);
+  //   if (t->priority > tmp->priority || 
+  //     (t->priority == tmp->priority && t->origin_priority > tmp->origin_priority)) {
+  //       break;
+  //   }
+  // }
+  // list_insert(e, &t->elem);
+
 
   t->status = THREAD_READY;
 
   /** Priority check, if this new thread's priority greater than current thread,
       call thread_yield(). But if in interrupt context, we can't use thread_yield() */
-  if (thread_current() != idle_thread && t->priority > thread_current()->priority) {
-    if (intr_context())
-      intr_yield_on_return();
-    else
-      thread_yield();
+  if (thread_current() != idle_thread) {
+    if (t->priority > thread_current()->priority || (t->priority == thread_current()->priority && t->origin_priority > thread_current()->origin_priority)) {
+      if (intr_context())
+        intr_yield_on_return();
+      else
+        thread_yield();
+    }
   }
 
   intr_set_level (old_level);
@@ -315,7 +328,10 @@ void
 thread_yield (void) 
 {
   struct thread *cur = thread_current ();
+  struct thread *t;
+  struct list_elem* e;
   enum intr_level old_level;
+
   
   ASSERT (!intr_context ());
 
@@ -323,6 +339,14 @@ thread_yield (void)
   if (cur != idle_thread) {
     list_push_back (&ready_list, &cur->elem);
     list_sort(&ready_list, compare_priority_func, NULL);
+    // for (e = list_begin(&ready_list); e != list_end(&ready_list); e = list_next(e)) {
+    //   t = list_entry(e, struct thread, elem);
+    //   if (cur->priority > t->priority || 
+    //     (cur->priority == t->priority && cur->origin_priority > t->origin_priority)) {
+    //       break;
+    //   }
+    // }
+    // list_insert(e, &cur->elem);
   }
   cur->status = THREAD_READY;
   schedule ();
@@ -338,11 +362,15 @@ bool compare_priority_func (const struct list_elem *a,
   struct thread* A = list_entry(a, struct thread, elem);
   struct thread* B = list_entry(b, struct thread, elem);
 
-  if (A->priority > B->priority) {
+  if (A->priority > B->priority || (A->priority == B->priority && A->origin_priority > B->origin_priority)) {
     return true;
   } else {
     return false;
   }
+}
+
+struct list* thread_get_lock_list(void) {
+  return &thread_current()->lock_list;
 }
 
 
@@ -369,8 +397,13 @@ thread_set_priority (int new_priority)
 {  
   enum intr_level old_level;
   struct thread* t;
-
-  thread_current ()->priority = new_priority;
+  struct thread* cur = thread_current();
+  
+  /* If no donate priority */
+  if (cur->priority == cur->origin_priority) {
+    cur->priority = new_priority;
+  }
+  cur->origin_priority = new_priority;
 
   /* Must set intr_disable() if access ready_list */
   old_level = intr_disable ();
@@ -507,7 +540,10 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  t->origin_priority = priority;
+  t->waiting_elem = NULL;
   t->magic = THREAD_MAGIC;
+  list_init(&t->lock_list);
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
