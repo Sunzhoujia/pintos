@@ -1,6 +1,7 @@
 #ifndef THREADS_THREAD_H
 #define THREADS_THREAD_H
 
+#include "threads/fixed-point.h"
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
@@ -89,6 +90,8 @@ struct thread
     uint8_t *stack;                     /**< Saved stack pointer. */
     int priority;                       /**< Priority. */
     int origin_priority;
+    int nice;
+    fixed_t recent_cpu;
     struct list_elem *waiting_elem;
     struct list lock_list;
     struct list_elem allelem;           /**< List element for all threads list. */
@@ -137,6 +140,12 @@ bool compare_priority_func (const struct list_elem *a,
                              void *aux UNUSED);
 
 void thread_foreach (thread_action_func *, void *);
+
+/** For BSD scheduler */
+void update_load_avg_and_recent_cpu(void);
+void update_priority(void);
+void thread_calculate_priority(struct thread* t);
+
 
 int thread_get_priority (void);
 void thread_set_priority (int);

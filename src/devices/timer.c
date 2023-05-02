@@ -89,6 +89,13 @@ timer_ticks (void)
   return t;
 }
 
+/** Return ticks quickly without calling intr_disable()  */
+int64_t
+timer_ticks_fast (void) 
+{
+  return ticks;
+}
+
 /** Returns the number of timer ticks elapsed since THEN, which
    should be a value once returned by timer_ticks(). */
 int64_t
@@ -217,9 +224,9 @@ timer_interrupt (struct intr_frame *args UNUSED)
   if (!list_empty(&sleeping_list)){
     for (e = list_begin(&sleeping_list); e != list_end(&sleeping_list); ) {
       struct sleeping_elem *se = list_entry(e, struct sleeping_elem, elem);
-      if (se->end_tick <= timer_ticks()) {
-        sema_up(&se->semaphore);
+      if (se->end_tick <= ticks) {
         e = list_remove(e);
+        sema_up(&se->semaphore);
       } else {
         break;
       }
