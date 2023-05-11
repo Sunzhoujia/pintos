@@ -611,6 +611,7 @@ init_thread (struct thread *t, const char *name, int priority)
     t->nice = thread_current()->nice; /* inherited from parent thread */
     t->recent_cpu = thread_current()->recent_cpu; /* inherited from parent thread */
   }
+  t->exit_code = 0;
   t->waiting_elem = NULL;
   t->magic = THREAD_MAGIC;
   list_init(&t->lock_list);

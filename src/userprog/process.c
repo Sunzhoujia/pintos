@@ -99,7 +99,7 @@ start_process (void *proc_cmd_)
     if_.esp -= arg_len;
     memcpy(if_.esp, token, arg_len);
     argv[argc++] = if_.esp;
-    printf("TOKEN %s LEN %d START %p\n", token, strlen(token), if_.esp);
+    // printf("TOKEN %s LEN %d START %p\n", token, strlen(token), if_.esp);
   }
 
   // STEP 3&4. Round the pointer down to a multiple of 4 first, then push the address of each string
@@ -131,7 +131,7 @@ start_process (void *proc_cmd_)
   memset(if_.esp, 0, ptr_size);
 
   // Debug
-  hex_dump((uintptr_t)if_.esp, if_.esp, 100, true);
+  // hex_dump((uintptr_t)if_.esp, if_.esp, PHYS_BASE - if_.esp, true);
   palloc_free_page(proc_cmd_copy);
 
   /* Start the user process by simulating a return from an
@@ -140,6 +140,7 @@ start_process (void *proc_cmd_)
      arguments on the stack in the form of a `struct intr_frame',
      we just point the stack pointer (%esp) to our stack frame
      and jump to it. */
+  /* 将一个指针变量 &if_ 的地址作为参数传递给 movl 指令，将该地址的值加载到栈指针寄存器 esp 中，然后跳转到标签 intr_exit 所在的位置。 */
   asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
   NOT_REACHED ();
 }

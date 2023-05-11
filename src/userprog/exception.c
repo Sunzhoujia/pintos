@@ -156,6 +156,16 @@ page_fault (struct intr_frame *f)
           not_present ? "not present" : "rights violation",
           write ? "writing" : "reading",
           user ? "user" : "kernel");
+
+  // The only chance that a page fault happens in kernel context is when dealing 
+  // with user-provided pointer through system call, because kernel code shouldn't 
+  // produce page faults (if we're writing it right...)
+  if (!user) {
+      f->eip = (void (*) (void)) f->eax;
+      f->eax = -1;
+      return;
+  }
+
   kill (f);
 }
 

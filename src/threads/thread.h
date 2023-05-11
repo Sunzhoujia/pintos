@@ -92,6 +92,7 @@ struct thread
     int origin_priority;
     int nice;
     fixed_t recent_cpu;
+    int exit_code;
     struct list_elem *waiting_elem;
     struct list lock_list;
     struct list_elem allelem;           /**< List element for all threads list. */
