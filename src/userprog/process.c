@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "list.h"
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
@@ -50,6 +51,13 @@ process_execute (const char *proc_cmd)
     palloc_free_page(proc_cmd_copy1);
     palloc_free_page(proc_cmd_copy2);
   }
+
+  /* Parent cannot return from exec() until know the execution result of child */
+  sema_down(&thread_current()->sema_exec);
+  if (!thread_current()->exec_success) {
+    return -1;
+  }
+  thread_current()->exec_success = false; // reset the flag for next spawn
   return tid;
 }
 
@@ -81,7 +89,14 @@ start_process (void *proc_cmd_)
   /* If load failed, quit. */
   if (!success) {
     palloc_free_page(proc_cmd_copy);
+    thread_current()->as_child->is_alive = false;
+    thread_current()->exit_code = -1;
+    sema_up(&thread_current()->parent->sema_exec);
     thread_exit ();
+  } else {
+    /* load success. */
+    thread_current()->parent->exec_success = 1;
+    sema_up(&thread_current()->parent->sema_exec);   
   }
 
   int argc = 0;
@@ -157,10 +172,34 @@ start_process (void *proc_cmd_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  int dummy = 0, i;
-  for(i=0; i<7 * 10000 * 10000; ++i) dummy += i;
-  ASSERT(dummy != 0);
-  return -1;
+  struct thread* t_cur = thread_current();
+
+  struct list_elem *e;
+  int rte_exit_code = -1;
+
+  for (e = list_begin(&t_cur->child_list); e != list_end(&t_cur->child_list); e = list_next(e)) {
+    struct child_entry *entry = list_entry(e, struct child_entry, elem);
+    if (entry->tid == child_tid) {
+      if (!entry->is_waiting_on && entry->is_alive) {
+        // What will happen if thread switch out before setting is_waiting_on? 
+        entry->is_waiting_on = true;
+        sema_down(&entry->wait_sema);
+        rte_exit_code =  entry->exit_code;
+        list_remove(e);
+        // Parent should free the child_entry
+        free(entry);
+      } else if (entry->is_waiting_on){
+        rte_exit_code = -1;
+      } else { // child has terminated, retrieve exit_code
+        list_remove(e);
+        free(entry);
+        rte_exit_code =  entry->exit_code;
+      }
+      break;
+    }
+  }
+  // child_tid is not a child of current process
+  return rte_exit_code;
 }
 
 /** Free the current process's resources. */

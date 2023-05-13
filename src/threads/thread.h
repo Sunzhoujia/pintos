@@ -2,6 +2,7 @@
 #define THREADS_THREAD_H
 
 #include "threads/fixed-point.h"
+#include "threads/synch.h"
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
@@ -93,7 +94,16 @@ struct thread
     int nice;
     fixed_t recent_cpu;
     int exit_code;
-    struct list_elem *waiting_elem;
+    struct thread* parent;              /**< Thread's parent. */
+    struct list child_list;             /**< List of children. */
+    struct child_entry *as_child;       /**< Thread itself's child_entry. This will be added 
+                                           to its parent's child_list and is heap-allocated 
+                                           so that it lives after the thread dies. */
+    struct semaphore sema_exec;         /**< Semaphore for executing (spawning) a new process. 
+                                           "UPed" after knowing whether the child has loaded 
+                                           its executable successfully. */
+    bool exec_success;                  /**< Whether new process successfully loaded its executable. */
+    struct list_elem *waiting_elem;     
     struct list lock_list;
     struct list_elem allelem;           /**< List element for all threads list. */
 
@@ -108,6 +118,18 @@ struct thread
     /* Owned by thread.c. */
     unsigned magic;                     /**< Detects stack overflow. */
   };
+
+/** Info of a thread's child  */
+struct child_entry {
+  tid_t tid;                        /**< Child's tid. */
+  int exit_code;                    /**< Child's exit code. */
+  struct thread *t;                 /**< Pointer to child thread. Set to NULL when no longer alive. */
+  bool is_alive;                    /**< Whether the child is still alive. */
+  bool is_waiting_on;               /**< Whether the parent is waiting on the child. */
+  struct semaphore wait_sema;       /**< Semaphore to let parent wait on the child */
+  struct list_elem elem;
+};
+
 
 /** If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.

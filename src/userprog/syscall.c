@@ -6,6 +6,7 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "user/syscall.h"
 
 static void syscall_handler (struct intr_frame *);
 static int get_user (const uint8_t *uaddr);
@@ -18,6 +19,8 @@ static void terminate_process(void);
 /* syscall */
 static void syscall_halt(struct intr_frame* f);
 static void syscall_exit(struct intr_frame *f);
+static void syscall_exec(struct intr_frame *f);
+static void syscall_wait(struct intr_frame *f);
 
 
 
@@ -33,15 +36,14 @@ static void syscall_halt(struct intr_frame* f UNUSED) {
 
 static void syscall_exit(struct intr_frame *f) {
   // exit_code is passed as ARG0, after syscall number
-  int exit_code = *(int *)(f->esp + sizeof(int));
+  int exit_code = *(int *)(f->esp + sizeof(void *));
   thread_current()->exit_code = exit_code;
   printf ("%s: exit(%d)\n", thread_current()->name, thread_current()->exit_code);
   thread_exit(); 
 }
 
 static void 
-syscall_write(struct intr_frame *f)
-{
+syscall_write(struct intr_frame *f) {
   int ptr_size = sizeof(void *);
   int fd = *(int *)(f->esp + ptr_size);
   char *buf = *(char **)(f->esp + 2*ptr_size);
@@ -54,6 +56,19 @@ syscall_write(struct intr_frame *f)
 }
 
 
+static void syscall_exec(struct intr_frame *f) {
+  int ptr_size = sizeof(void *);
+  char* file = *(char**)(f->esp + ptr_size);
+
+  pid_t child_pid = process_execute (file);
+
+}
+
+static void syscall_wait(struct intr_frame *f) {
+  int ptr_size = sizeof(void *);
+  int pid = *(int *)(f->esp + ptr_size);
+  f->eax = process_wait(pid);
+}
 
 static void
 syscall_handler (struct intr_frame *f UNUSED) 
@@ -69,6 +84,11 @@ syscall_handler (struct intr_frame *f UNUSED)
       break;
     case SYS_WRITE:
       syscall_write(f);
+      break;
+    case SYS_EXEC:
+      syscall_exec(f);
+      break;
+    case SYS_WAIT:
       break;
     default:
       NOT_REACHED();

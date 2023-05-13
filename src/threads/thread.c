@@ -208,6 +208,20 @@ thread_create (const char *name, int priority,
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
 
+
+  /* Initialize child entry here because we just got a tid */
+  t->as_child = malloc(sizeof(struct child_entry));
+  t->as_child->tid = tid;
+  t->as_child->t = t;
+  t->as_child->is_alive = true;
+  t->as_child->exit_code = 0;
+  t->as_child->is_waiting_on = false;
+  sema_init(&t->as_child->wait_sema, 0);
+
+  /* Link child and parent thread. */
+  t->parent = thread_current();
+  list_push_back(&t->parent->child_list, &t->as_child->elem);
+
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
   kf->eip = NULL;
@@ -324,6 +338,30 @@ thread_exit (void)
 #ifdef USERPROG
   process_exit ();
 #endif
+
+  struct list_elem* e;
+  struct thread* t_cur = thread_current();
+  
+  // As a parent, mark the parent of any child that hasn't exited as NULL.
+  for (e = list_begin(&t_cur->child_list); e != list_end(&t_cur->child_list); e = list_next(e)) {
+    struct child_entry* child = list_entry(e, struct child_entry, elem);
+    if (child->is_alive) {
+      child->t->parent = NULL;
+    }
+  }
+
+  // as a child, if the parent has exited, it's ok to free as_child element.
+  if (t_cur->parent == NULL) {
+    free(t_cur->as_child);
+  } else {
+    t_cur->as_child->exit_code = t_cur->exit_code;
+    if (t_cur->as_child->is_waiting_on) {
+      sema_up(&t_cur->as_child->wait_sema);
+    }
+    t_cur->as_child->is_alive = false;
+    t_cur->as_child->t = NULL;
+  }
+
 
   /* Remove thread from all threads list, set our status to dying,
      and schedule another process.  That process will destroy us
@@ -615,6 +653,8 @@ init_thread (struct thread *t, const char *name, int priority)
   t->waiting_elem = NULL;
   t->magic = THREAD_MAGIC;
   list_init(&t->lock_list);
+  list_init(&t->child_list); // as_child initialization will be done later, see thread_create()
+  sema_init(&t->sema_exec, 0);
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
