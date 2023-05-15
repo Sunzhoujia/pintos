@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "list.h"
+#include "threads/synch.h"
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
@@ -50,14 +51,21 @@ process_execute (const char *proc_cmd)
   if (tid == TID_ERROR) {
     palloc_free_page(proc_cmd_copy1);
     palloc_free_page(proc_cmd_copy2);
+    return -1;
   }
+
 
   /* Parent cannot return from exec() until know the execution result of child */
   sema_down(&thread_current()->sema_exec);
   if (!thread_current()->exec_success) {
+    palloc_free_page(proc_cmd_copy1);
+    palloc_free_page(proc_cmd_copy2);
     return -1;
   }
   thread_current()->exec_success = false; // reset the flag for next spawn
+  palloc_free_page(proc_cmd_copy1);
+  palloc_free_page(proc_cmd_copy2);
+
   return tid;
 }
 
@@ -78,6 +86,15 @@ start_process (void *proc_cmd_)
   strlcpy(proc_cmd_copy, proc_cmd, PGSIZE);
 
   proc_name = strtok_r(proc_cmd, " ", &save_ptr);
+
+  /* Deny writes to executable file.*/
+  lock_acquire(&filesys_lock);
+  struct file *f = filesys_open(proc_name);
+  if (f != NULL) {
+    file_deny_write(f);
+    thread_current()->exec_file = f;
+  }
+  lock_release(&filesys_lock);
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
@@ -191,9 +208,9 @@ process_wait (tid_t child_tid UNUSED)
       } else if (entry->is_waiting_on){
         rte_exit_code = -1;
       } else { // child has terminated, retrieve exit_code
+        rte_exit_code =  entry->exit_code;
         list_remove(e);
         free(entry);
-        rte_exit_code =  entry->exit_code;
       }
       break;
     }
@@ -225,6 +242,12 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
+
+  // Close the executable file and re-enable writes.
+  lock_acquire(&filesys_lock);
+  file_close(cur->exec_file);
+  lock_release(&filesys_lock);
+
 }
 
 /** Sets up the CPU for running user code in the current

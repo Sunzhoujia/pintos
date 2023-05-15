@@ -26,6 +26,10 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /**< Default priority. */
 #define PRI_MAX 63                      /**< Highest priority. */
 
+
+/** Maximum number of files that a process can open. */
+#define MAX_FD 128                    
+
 /** A kernel thread or user process.
 
    Each thread structure is stored in its own 4 kB page.  The
@@ -103,6 +107,10 @@ struct thread
                                            "UPed" after knowing whether the child has loaded 
                                            its executable successfully. */
     bool exec_success;                  /**< Whether new process successfully loaded its executable. */
+    int next_fd;                        /**< Next slot to put a file object. */
+    struct file* fd_table[128];         /**< File descriptor table. */
+    struct file* exec_file;            /**< Pointer to the executable file. */
+
     struct list_elem *waiting_elem;     
     struct list lock_list;
     struct list_elem allelem;           /**< List element for all threads list. */
@@ -179,5 +187,11 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+/**  For accessing fd table.*/
+struct file* thread_get_file(int fd);
+int thread_add_file(struct file* f);
+void thread_close_file(int fd);
+
 
 #endif /**< threads/thread.h */

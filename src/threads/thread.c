@@ -14,6 +14,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "filesys/filesys.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -341,6 +342,7 @@ thread_exit (void)
 
   struct list_elem* e;
   struct thread* t_cur = thread_current();
+  int i;
   
   // As a parent, mark the parent of any child that hasn't exited as NULL.
   for (e = list_begin(&t_cur->child_list); e != list_end(&t_cur->child_list); e = list_next(e)) {
@@ -362,6 +364,12 @@ thread_exit (void)
     t_cur->as_child->t = NULL;
   }
 
+  // Close all open file descriptors
+  for (i = 0; i < MAX_FD; i++) {
+    thread_close_file(i);
+  }
+
+  printf ("%s: exit(%d)\n", thread_current()->name, thread_current()->exit_code);
 
   /* Remove thread from all threads list, set our status to dying,
      and schedule another process.  That process will destroy us
@@ -650,6 +658,7 @@ init_thread (struct thread *t, const char *name, int priority)
     t->recent_cpu = thread_current()->recent_cpu; /* inherited from parent thread */
   }
   t->exit_code = 0;
+  t->next_fd = 2;
   t->waiting_elem = NULL;
   t->magic = THREAD_MAGIC;
   list_init(&t->lock_list);
@@ -770,6 +779,49 @@ allocate_tid (void)
 
   return tid;
 }
+
+
+int thread_add_file(struct file* f) {
+  struct thread* t = thread_current();
+  int i, j;
+
+  for (i = t->next_fd, j = 0; j < MAX_FD; i++, j++) {
+    if (i >= MAX_FD) {
+      i = 2;
+    }
+    if (t->fd_table[i] == NULL) {
+      t->fd_table[i] = f;
+      t->next_fd = i + 1;
+      return i;
+    }
+  }
+  return -1;
+}
+
+struct file* thread_get_file(int fd) {
+  struct thread* t = thread_current();
+  if (fd < 0 || fd >= MAX_FD) {
+    return NULL;
+  }
+  return t->fd_table[fd];
+}
+
+
+void thread_close_file(int fd) {
+  struct thread* t = thread_current();
+  if (fd < 0 || fd >= MAX_FD) {
+    return;
+  }
+  if (t->fd_table[fd] == NULL) {
+    return;
+  }
+  lock_acquire(&filesys_lock);
+  file_close(t->fd_table[fd]);
+  lock_release(&filesys_lock);
+  t->fd_table[fd] = NULL;
+}
+
+
 
 /** Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
